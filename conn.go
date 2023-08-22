@@ -17,9 +17,17 @@ type DisconnectHandler func(*Conn)
 type Conn struct {
 	rw         io.ReadWriter
 	conn       net.Conn
+	terminalType  string
+	terminalWidth int
+	terminalHeight int
 	msgHandler MessageHandler
 	disHandler DisconnectHandler
 	lock       sync.Mutex
+}
+
+// GetTerminalType retrieves the terminal type for the connection.
+func (c *Conn) GetTerminalType() string {
+	return c.terminalType
 }
 
 // Close closes the Telnet connection.
