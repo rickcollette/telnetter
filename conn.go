@@ -7,6 +7,7 @@ package telnetter
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -144,7 +145,8 @@ func (c *Conn) ReadString() (string, error) {
 }
 
 
-// ReadByte reads a single byte from the connection, handling basic Telnet command sequences.
+// ReadByte reads a single byte from the connection, handling basic Telnet command sequences 
+// and prints out the exact byte values being read for debugging purposes.
 func (c *Conn) ReadByte() (byte, error) {
     const (
         IAC  = 255 // Interpret As Command
@@ -159,6 +161,10 @@ func (c *Conn) ReadByte() (byte, error) {
         if err != nil {
             return 0, err
         }
+        
+        // Print out the exact byte value for debugging
+        fmt.Printf("Byte read: %d\n", b[0])
+
         if b[0] == IAC {
             // Read the next two bytes (command and option) and discard them
             command := make([]byte, 2)
@@ -171,4 +177,5 @@ func (c *Conn) ReadByte() (byte, error) {
         return b[0], nil
     }
 }
+
 
