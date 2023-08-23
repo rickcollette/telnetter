@@ -176,23 +176,27 @@ func (c *Conn) ReadByte() (byte, error) {
         b := make([]byte, 1)
         _, err := c.conn.Read(b)
         if err != nil {
+            fmt.Println("ReadByte: Error reading byte:", err)
             return 0, err
         }
         
-        // Print out the exact byte value for debugging
-        fmt.Printf("Byte read: %d\n", b[0])
+        // Extensive debugging: print out the byte being read
+        fmt.Printf("ReadByte: Byte read: %d\n", b[0])
 
         if b[0] == IAC {
-            // Read the next two bytes (command and option) and discard them
+            // Read the next two bytes (command and option) and print them
             command := make([]byte, 2)
             _, err := c.conn.Read(command)
             if err != nil {
+                fmt.Println("ReadByte: Error reading command sequence:", err)
                 return 0, err
             }
+            fmt.Printf("ReadByte: Telnet sequence: %d %d\n", command[0], command[1])
             continue // Go back to the start of the loop to read the next byte
         }
         return b[0], nil
     }
 }
+
 
 
