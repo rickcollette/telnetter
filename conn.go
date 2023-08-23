@@ -6,6 +6,7 @@ package telnetter
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -95,13 +96,20 @@ func (c *Conn) SetDisconnectHandler(handler DisconnectHandler) {
 
 // Write writes a slice of bytes to the connection.
 func (c *Conn) Write(p []byte) (int, error) {
-	return c.rw.Write(p)
+    if c.rw == nil {
+        return 0, errors.New("rw is not initialized")
+    }
+    return c.rw.Write(p)
 }
 
 // Read reads a slice of bytes from the connection.
 func (c *Conn) Read(p []byte) (int, error) {
-	return c.rw.Read(p)
+    if c.rw == nil {
+        return 0, errors.New("rw is not initialized")
+    }
+    return c.rw.Read(p)
 }
+
 
 // WriteString writes a string to the connection.
 func (c *Conn) WriteString(s string) error {
