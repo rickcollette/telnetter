@@ -144,9 +144,31 @@ func (c *Conn) ReadString() (string, error) {
 }
 
 
-// ReadByte reads a single byte from the connection.
+// ReadByte reads a single byte from the connection, handling basic Telnet command sequences.
 func (c *Conn) ReadByte() (byte, error) {
-	buf := make([]byte, 1)
-	_, err := c.conn.Read(buf)
-	return buf[0], err
+    const (
+        IAC  = 255 // Interpret As Command
+        DO   = 253
+        DONT = 254
+        WILL = 251
+        WONT = 252
+    )
+    for {
+        b := make([]byte, 1)
+        _, err := c.conn.Read(b)
+        if err != nil {
+            return 0, err
+        }
+        if b[0] == IAC {
+            // Read the next two bytes (command and option) and discard them
+            command := make([]byte, 2)
+            _, err := c.conn.Read(command)
+            if err != nil {
+                return 0, err
+            }
+            continue // Go back to the start of the loop to read the next byte
+        }
+        return b[0], nil
+    }
 }
+
