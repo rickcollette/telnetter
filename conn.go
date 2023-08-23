@@ -117,21 +117,32 @@ func (c *Conn) WriteString(s string) error {
 	return err
 }
 
-// ReadString reads a string until a newline character is encountered.
+// ReadString reads a string until a newline character or sequence is encountered.
 func (c *Conn) ReadString() (string, error) {
-	var buffer bytes.Buffer
-	for {
-		b, err := c.ReadByte()
-		if err != nil {
-			return "", err
-		}
-		if b == '\n' {
-			break
-		}
-		buffer.WriteByte(b)
-	}
-	return buffer.String(), nil
+    var buffer bytes.Buffer
+    var prevByte byte
+    for {
+        b, err := c.ReadByte()
+        if err != nil {
+            return "", err
+        }
+        if b == '\n' {
+            // If the previous byte was '\r', we have a CRLF sequence.
+            // Remove the '\r' from the buffer.
+            if prevByte == '\r' {
+                bufLen := buffer.Len()
+                if bufLen > 0 {
+                    buffer.Truncate(bufLen - 1)
+                }
+            }
+            break
+        }
+        buffer.WriteByte(b)
+        prevByte = b
+    }
+    return buffer.String(), nil
 }
+
 
 // ReadByte reads a single byte from the connection.
 func (c *Conn) ReadByte() (byte, error) {
