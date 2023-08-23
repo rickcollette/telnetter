@@ -3,5 +3,5 @@ package telnetter
 import "fmt"
 
 func PrintVersion() {
-	fmt.Println("Telnetter v08232023.04")
+	fmt.Println("Telnetter v0.1.4")
 }
