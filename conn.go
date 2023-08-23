@@ -127,15 +127,21 @@ func (c *Conn) WriteString(s string) error {
 	return err
 }
 
-// ReadString reads a string until a newline character or sequence is encountered.
+// ReadString reads a string until a newline character or sequence is encountered 
+// and prints out the exact byte values being read for debugging purposes.
 func (c *Conn) ReadString() (string, error) {
     var buffer bytes.Buffer
     var prevByte byte
     for {
         b, err := c.ReadByte()
         if err != nil {
+            fmt.Println("ReadString: Error reading byte:", err)
             return "", err
         }
+        
+        // Debugging: print out the byte being read
+        fmt.Printf("ReadString: Byte read: %d\n", b)
+
         if b == '\n' {
             // If the previous byte was '\r', we have a CRLF sequence.
             // Remove the '\r' from the buffer.
@@ -145,6 +151,7 @@ func (c *Conn) ReadString() (string, error) {
                     buffer.Truncate(bufLen - 1)
                 }
             }
+            fmt.Println("ReadString: Newline or CRLF sequence encountered.")
             break
         }
         buffer.WriteByte(b)
@@ -152,6 +159,7 @@ func (c *Conn) ReadString() (string, error) {
     }
     return buffer.String(), nil
 }
+
 
 
 // ReadByte reads a single byte from the connection, handling basic Telnet command sequences 
