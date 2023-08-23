@@ -103,13 +103,22 @@ func (c *Conn) Write(p []byte) (int, error) {
     return c.rw.Write(p)
 }
 
-// Read reads a slice of bytes from the connection.
+// Read reads a slice of bytes from the connection 
+// and prints out the exact byte values being read for debugging purposes.
 func (c *Conn) Read(p []byte) (int, error) {
-    if c.rw == nil {
-        return 0, errors.New("rw is not initialized")
+    n, err := c.rw.Read(p)
+    if err != nil {
+        return n, err
     }
-    return c.rw.Read(p)
+    
+    // Print out the exact byte values for debugging
+    for _, b := range p[:n] {
+        fmt.Printf("Byte read: %d\n", b)
+    }
+    
+    return n, nil
 }
+
 
 
 // WriteString writes a string to the connection.
