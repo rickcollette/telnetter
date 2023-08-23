@@ -107,6 +107,7 @@ func (l *Listener) Accept() (*Conn, error) {
 
 	telCon := &Conn{
 		conn: conn,
+		rw: conn,
 	}
 
 	go handleConnection(conn, l.timeout, telCon)
