@@ -1,7 +1,3 @@
-// Package: telnetter
-// Description: Extended utilities for formatting and sending messages in Telnet sessions.
-// Git Repository: [URL not provided in the source]
-// License: [License type not provided in the source]
 package telnetter
 
 import (
@@ -10,12 +6,6 @@ import (
 )
 
 
-// Title: Send Formatted Message
-// Description: Formats and sends a message to the client based on its terminal dimensions.
-// Function: func SendMessage(conn net.Conn, message string, width int)
-// CalledWith: SendMessage(conn, "Hello, World!", 80)
-// ExpectedOutput: None, sends the formatted message to the client.
-// Example: SendMessage(conn, "This is a test message.", 50)
 func SendMessage(conn net.Conn, message string, width int) {
     lines := formatMessageForTerminal(message, width)
     for _, line := range lines {
@@ -24,12 +14,6 @@ func SendMessage(conn net.Conn, message string, width int) {
 }
 
 
-// Title: Format Message for Terminal
-// Description: Breaks down a message into lines that fit within the terminal width.
-// Function: func formatMessageForTerminal(message string, width int) []string
-// CalledWith: lines := formatMessageForTerminal("This is a long message.", 10)
-// ExpectedOutput: A slice of strings representing lines of the formatted message.
-// Example: formattedLines := formatMessageForTerminal("Hello, World!", 5)
 func formatMessageForTerminal(message string, width int) []string {
     words := strings.Split(message, " ")
     var lines []string
@@ -51,4 +35,56 @@ func formatMessageForTerminal(message string, width int) []string {
     }
 
     return lines
+}
+
+func WrapText(text string, width int) string {
+    var wrappedText strings.Builder
+    words := strings.Fields(text)
+    if len(words) == 0 {
+        return ""
+    }
+
+    wrappedText.WriteString(words[0])
+    currentLineLength := len(words[0])
+    for _, word := range words[1:] {
+        if currentLineLength+len(word)+1 > width {
+            wrappedText.WriteString("\n")
+            currentLineLength = 0
+        } else {
+            wrappedText.WriteString(" ")
+            currentLineLength++
+        }
+        wrappedText.WriteString(word)
+        currentLineLength += len(word)
+    }
+    return wrappedText.String()
+}
+
+func AlignText(text string, width int, alignment string) string {
+    gap := width - len(text)
+    if gap <= 0 {
+        return text
+    }
+
+    switch alignment {
+    case "left":
+        return text + strings.Repeat(" ", gap)
+    case "right":
+        return strings.Repeat(" ", gap) + text
+    case "center":
+        leftPadding := gap / 2
+        rightPadding := gap - leftPadding
+        return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
+    default:
+        return text
+    }
+}
+
+func IndentText(text string, spaces int) string {
+    indentation := strings.Repeat(" ", spaces)
+    lines := strings.Split(text, "\n")
+    for i, line := range lines {
+        lines[i] = indentation + line
+    }
+    return strings.Join(lines, "\n")
 }

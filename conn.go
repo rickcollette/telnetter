@@ -1,10 +1,7 @@
-// Package: telnetter
-// Description: Provides utilities for managing Telnet connections.
-// Git Repository: [URL not provided in the source]
-// License: [License type not provided in the source]
 package telnetter
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -13,190 +10,146 @@ import (
 	"sync"
 )
 
-// MessageHandler defines the function signature for handling received messages.
-// It provides a mechanism for custom logic to be executed upon receiving a message.
 type MessageHandler func(*Conn, string)
-
-// DisconnectHandler defines the function signature for handling disconnect events.
-// It provides a mechanism for custom logic to be executed upon a client disconnecting.
 type DisconnectHandler func(*Conn)
 
-// Conn represents a Telnet connection with utilities for reading/writing data,
-// managing terminal type/size, and setting custom handlers for messages and disconnects.
 type Conn struct {
-	rw         io.ReadWriter
-	conn       net.Conn
-	terminalType  string
-	terminalWidth int
-	terminalHeight int
-	msgHandler MessageHandler
-	disHandler DisconnectHandler
-	lock       sync.Mutex
+	ReadWrite         io.ReadWriter
+	Connection        net.Conn
+	TerminalType      string
+	TerminalWidth     int
+	TerminalHeight    int
+	MessageHandler    MessageHandler
+	DisconnectHandler DisconnectHandler
+	Lock              sync.Mutex
 }
 
+type DataReader struct {
+	sourced  io.Reader
+	buffered *bufio.Reader
+}
 
-// Title: Get Terminal Type
-// Description: Retrieves the terminal type associated with the connection.
-// Function: func (c *Conn) GetTerminalType() string
-// CalledWith: conn.GetTerminalType()
-// ExpectedOutput: A string representing the terminal type.
-// Example: termType := conn.GetTerminalType()
+func bufferedDataReader(r io.Reader) *DataReader {
+	buffered := bufio.NewReader(r)
+
+	reader := DataReader{
+		sourced:  r,
+		buffered: buffered,
+	}
+
+	return &reader
+}
+
 func (c *Conn) GetTerminalType() string {
-	return c.terminalType
+	return c.TerminalType
 }
 
-
-// Title: Close Connection
-// Description: Closes the Telnet connection.
-// Function: func (c *Conn) Close() error
-// CalledWith: conn.Close()
-// ExpectedOutput: An error if the closing fails, otherwise nil.
-// Example: err := conn.Close()
 func (c *Conn) Close() error {
-	return c.conn.Close()
+	return c.Connection.Close()
 }
 
-
-// Title: Get Remote Address
-// Description: Returns the remote address of the connection.
-// Function: func (c *Conn) RemoteAddr() net.Addr
-// CalledWith: addr := conn.RemoteAddr()
-// ExpectedOutput: The remote address of the connection.
-// Example: remoteAddress := conn.RemoteAddr()
 func (c *Conn) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
+	return c.Connection.RemoteAddr()
 }
 
-
-// Title: Set Message Handler
-// Description: Sets the message handler for the connection.
-// Function: func (c *Conn) SetMessageHandler(handler MessageHandler)
-// CalledWith: conn.SetMessageHandler(handlerFunction)
-// ExpectedOutput: None, sets the message handler for the connection.
-// Example: conn.SetMessageHandler(func(conn *Conn, msg string) { ... })
 func (c *Conn) SetMessageHandler(handler MessageHandler) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.msgHandler = handler
+	c.Lock.Lock()
+	defer c.Lock.Unlock()
+	c.MessageHandler = handler
 }
 
-
-// Title: Set Disconnect Handler
-// Description: Sets the disconnect handler for the connection.
-// Function: func (c *Conn) SetDisconnectHandler(handler DisconnectHandler)
-// CalledWith: conn.SetDisconnectHandler(handlerFunction)
-// ExpectedOutput: None, sets the disconnect handler for the connection.
-// Example: conn.SetDisconnectHandler(func(conn *Conn) { ... })
 func (c *Conn) SetDisconnectHandler(handler DisconnectHandler) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	c.disHandler = handler
+	c.Lock.Lock()
+	defer c.Lock.Unlock()
+	c.DisconnectHandler = handler
 }
 
-// Write writes a slice of bytes to the connection.
 func (c *Conn) Write(p []byte) (int, error) {
-    if c.rw == nil {
-        return 0, errors.New("rw is not initialized")
-    }
-    return c.rw.Write(p)
+	if c.ReadWrite == nil {
+		return 0, errors.New("ReadWrite is not initialized")
+	}
+	return c.ReadWrite.Write(p)
 }
 
-// Read reads a slice of bytes from the connection 
-// and prints out the exact byte values being read for debugging purposes.
-func (c *Conn) Read(p []byte) (int, error) {
-    n, err := c.rw.Read(p)
-    if err != nil {
-        return n, err
-    }
-    
-    // Print out the exact byte values for debugging
-    for _, b := range p[:n] {
-        fmt.Printf("Byte read: %d\n", b)
-    }
-    
-    return n, nil
+func (r *DataReader) Read(data []byte) (n int, err error) {
+    return r.buffered.Read(data)
 }
 
-
-
-// WriteString writes a string to the connection.
+func (c *Conn) Read(b []byte) (int, error) {
+    reader := bufferedDataReader(c.Connection)
+    return reader.Read(b)
+}
 func (c *Conn) WriteString(s string) error {
 	_, err := c.Write([]byte(s))
 	return err
 }
 
-// ReadString reads a string until a newline character or sequence is encountered 
-// and prints out the exact byte values being read for debugging purposes.
 func (c *Conn) ReadString() (string, error) {
-    var buffer bytes.Buffer
-    var prevByte byte
-    for {
-        b, err := c.ReadByte()
-        if err != nil {
-            fmt.Println("ReadString: Error reading byte:", err)
-            return "", err
-        }
-        
-        // Debugging: print out the byte being read
-        fmt.Printf("ReadString: Byte read: %d\n", b)
-
-        if b == '\n' {
-            // If the previous byte was '\r', we have a CRLF sequence.
-            // Remove the '\r' from the buffer.
-            if prevByte == '\r' {
-                bufLen := buffer.Len()
-                if bufLen > 0 {
-                    buffer.Truncate(bufLen - 1)
-                }
-            }
-            fmt.Println("ReadString: Newline or CRLF sequence encountered.")
-            break
-        }
-        buffer.WriteByte(b)
-        prevByte = b
-    }
-    return buffer.String(), nil
+	var buffer bytes.Buffer
+	var prevByte byte
+	for {
+		b, err := c.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		if b == '\n' {
+			if prevByte == '\r' {
+				bufLen := buffer.Len()
+				if bufLen > 0 {
+					buffer.Truncate(bufLen - 1)
+				}
+			}
+			break
+		}
+		buffer.WriteByte(b)
+		prevByte = b
+	}
+	return buffer.String(), nil
 }
 
-
-
-// ReadByte reads a single byte from the connection, handling basic Telnet command sequences 
-// and prints out the exact byte values being read for debugging purposes.
 func (c *Conn) ReadByte() (byte, error) {
-    const (
-        IAC  = 255 // Interpret As Command
-        DO   = 253
-        DONT = 254
-        WILL = 251
-        WONT = 252
-    )
-    for {
-        b := make([]byte, 1)
-        _, err := c.conn.Read(b)
-        if err != nil {
-            fmt.Println("ReadByte: Error reading byte:", err)
-            return 0, err
-        }
-        
-        // Extensive debugging: print out the byte being read
-        fmt.Printf("ReadByte: Byte read: %d\n", b[0])
+	const IAC = 255 // Interpret As Command
 
-        if b[0] == IAC {
-            // Read the next two bytes (command and option) and print them
-            command := make([]byte, 2)
-            _, err := c.conn.Read(command)
-            if err != nil {
-                fmt.Println("ReadByte: Error reading command sequence:", err)
-                return 0, err
-            }
-            fmt.Printf("ReadByte: Telnet sequence: %d %d\n", command[0], command[1])
-            continue // Go back to the start of the loop to read the next byte
-        }
-        return b[0], nil
-    }
+	b := make([]byte, 1)
+	_, err := c.Connection.Read(b)
+	if err != nil {
+		return 0, fmt.Errorf("ReadByte: Error reading byte: %w", err)
+	}
+
+	if b[0] == IAC {
+		_, err := handleIACSequence(c.Connection)
+		if err != nil {
+			return 0, err
+		}
+		return c.ReadByte()
+	}
+
+	return b[0], nil
 }
 
-
-
+func (c *Conn) HandleIACCommand() error {
+	const (
+		DO   = 253
+		DONT = 254
+		WILL = 251
+		WONT = 252
+	)
+	command := make([]byte, 2)
+	_, err := c.Connection.Read(command)
+	if err != nil {
+		return fmt.Errorf("error reading command sequence: %w", err)
+	}
+	switch command[0] {
+	case DO:
+		fmt.Printf("Client requests to DO option %d\n", command[1])
+	case DONT:
+		fmt.Printf("Client requests to DONT do option %d\n", command[1])
+	case WILL:
+		fmt.Printf("Client offers to WILL do option %d\n", command[1])
+	case WONT:
+		fmt.Printf("Client offers to WONT do option %d\n", command[1])
+	default:
+		fmt.Printf("Unhandled Telnet command: %d\n", command[0])
+	}
+	return nil
+}
