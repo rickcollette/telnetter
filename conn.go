@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type MessageHandler func(*Conn, string)
@@ -152,4 +153,25 @@ func (c *Conn) HandleIACCommand() error {
 		fmt.Printf("Unhandled Telnet command: %d\n", command[0])
 	}
 	return nil
+}
+
+// LocalAddr returns the local network address.
+func (c *Conn) LocalAddr() net.Addr {
+    // Assuming the underlying net.Conn is stored in c.Connection
+    return c.Connection.LocalAddr()
+}
+
+// SetDeadline sets the read and write deadlines associated with the connection.
+func (c *Conn) SetDeadline(t time.Time) error {
+    return c.Connection.SetDeadline(t)
+}
+
+// SetReadDeadline sets the deadline for future Read calls.
+func (c *Conn) SetReadDeadline(t time.Time) error {
+    return c.Connection.SetReadDeadline(t)
+}
+
+// SetWriteDeadline sets the deadline for future Write calls.
+func (c *Conn) SetWriteDeadline(t time.Time) error {
+    return c.Connection.SetWriteDeadline(t)
 }
