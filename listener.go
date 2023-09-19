@@ -105,6 +105,7 @@ func handleConnection(conn net.Conn, timeout time.Duration, telnetConn *Conn) {
     state := ReadStateNormal
     echoEnabled := false
     buf := make([]byte, 2048)
+    var messageBuffer []byte
 
     for {
         if timeout > 0 {
@@ -121,8 +122,18 @@ func handleConnection(conn net.Conn, timeout time.Duration, telnetConn *Conn) {
             case ReadStateNormal:
                 if buf[i] == TNInterpretAsCommand {
                     state = ReadStateCommand
-                } else if echoEnabled {
-                    conn.Write(buf[i : i+1])
+                } else {
+                    if echoEnabled {
+                        conn.Write(buf[i : i+1])
+                    }
+                    messageBuffer = append(messageBuffer, buf[i])
+                    if buf[i] == '\n' {
+                        // Trigger the MessageHandler when a newline is encountered
+                        if telnetConn.MessageHandler != nil {
+                            telnetConn.MessageHandler(telnetConn, string(messageBuffer))
+                        }
+                        messageBuffer = nil
+                    }
                 }
             case ReadStateCommand:
                 if buf[i] == TNInterpretAsCommand {
@@ -138,6 +149,7 @@ func handleConnection(conn net.Conn, timeout time.Duration, telnetConn *Conn) {
         telnetConn.DisconnectHandler(telnetConn)
     }
 }
+
 
 func (l *Listener) Shutdown() error {
     close(l.shutdownCh)

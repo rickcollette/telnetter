@@ -3,7 +3,6 @@ package telnetter
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,16 +12,26 @@ import (
 
 type MessageHandler func(*Conn, string)
 type DisconnectHandler func(*Conn)
+type OptionCallback func(*Conn, byte, bool)
 
 type Conn struct {
-	ReadWrite         io.ReadWriter
-	Connection        net.Conn
-	TerminalType      string
-	TerminalWidth     int
-	TerminalHeight    int
-	MessageHandler    MessageHandler
-	DisconnectHandler DisconnectHandler
-	Lock              sync.Mutex
+    ReadWrite       io.ReadWriter
+    Connection      net.Conn
+    TerminalType    string
+    optionState     map[byte]bool
+    optionCallbacks map[byte]OptionCallback
+    Lock            sync.Mutex
+    MessageHandler  MessageHandler
+    DisconnectHandler DisconnectHandler
+}
+
+func NewConn(conn net.Conn) *Conn {
+    return &Conn{
+        ReadWrite:       conn,
+        Connection:      conn,
+        optionState:     make(map[byte]bool),
+        optionCallbacks: make(map[byte]OptionCallback),
+    }
 }
 
 type DataReader struct {
@@ -32,13 +41,7 @@ type DataReader struct {
 
 func bufferedDataReader(r io.Reader) *DataReader {
 	buffered := bufio.NewReader(r)
-
-	reader := DataReader{
-		sourced:  r,
-		buffered: buffered,
-	}
-
-	return &reader
+	return &DataReader{sourced: r, buffered: buffered}
 }
 
 func (c *Conn) GetTerminalType() string {
@@ -65,21 +68,88 @@ func (c *Conn) SetDisconnectHandler(handler DisconnectHandler) {
 	c.DisconnectHandler = handler
 }
 
-func (c *Conn) Write(p []byte) (int, error) {
-	if c.ReadWrite == nil {
-		return 0, errors.New("ReadWrite is not initialized")
-	}
-	return c.ReadWrite.Write(p)
+func (c *Conn) Write(b []byte) (int, error) {
+    escapedData := make([]byte, 0, len(b)*2)
+    for _, byteValue := range b {
+        if byteValue == 0xFF {
+            escapedData = append(escapedData, 0xFF, 0xFF)
+        } else {
+            escapedData = append(escapedData, byteValue)
+        }
+    }
+    return c.Connection.Write(escapedData)
 }
 
 func (r *DataReader) Read(data []byte) (n int, err error) {
     return r.buffered.Read(data)
 }
 
+func (c *Conn) SetOptionCallback(option byte, callback OptionCallback) {
+    c.optionCallbacks[option] = callback
+}
+
 func (c *Conn) Read(b []byte) (int, error) {
     reader := bufferedDataReader(c.Connection)
-    return reader.Read(b)
+    n, err := reader.Read(b)
+    if err != nil {
+        return n, err
+    }
+    
+    outIdx := 0
+    i := 0
+    for i < n {
+        if b[i] == 0xFF {
+            if i+1 < n {
+                switch b[i+1] {
+                case 250:  // SB
+                    endIdx := i + 2
+                    for endIdx+1 < n && !(b[endIdx] == 0xFF && b[endIdx+1] == 240) {
+                        endIdx++
+                    }
+                    fmt.Printf("Sub-negotiation Data: %v\\n", b[i+2:endIdx])
+                    i = endIdx + 1
+                    continue
+                case 251:  // WILL
+                    c.optionState[b[i+2]] = true
+                    if callback, exists := c.optionCallbacks[b[i+2]]; exists {
+                        callback(c, b[i+2], true)
+                    }
+                    c.Write([]byte{0xFF, 253, b[i+2]})
+                case 252:  // WONT
+                    c.optionState[b[i+2]] = false
+                    if callback, exists := c.optionCallbacks[b[i+2]]; exists {
+                        callback(c, b[i+2], false)
+                    }
+                    c.Write([]byte{0xFF, 254, b[i+2]})
+                case 253:  // DO
+                    c.optionState[b[i+2]] = true
+                    if callback, exists := c.optionCallbacks[b[i+2]]; exists {
+                        callback(c, b[i+2], true)
+                    }
+                    c.Write([]byte{0xFF, 251, b[i+2]})
+                case 254:  // DONT
+                    c.optionState[b[i+2]] = false
+                    if callback, exists := c.optionCallbacks[b[i+2]]; exists {
+                        callback(c, b[i+2], false)
+                    }
+                    c.Write([]byte{0xFF, 252, b[i+2]})
+                case 0xFF:  // Escaped IAC in data
+                    b[outIdx] = b[i]
+                    outIdx++
+                    i += 2
+                    continue
+                }
+                i += 2
+            }
+        } else {
+            b[outIdx] = b[i]
+            outIdx++
+            i++
+        }
+    }
+    return outIdx, nil
 }
+
 func (c *Conn) WriteString(s string) error {
 	_, err := c.Write([]byte(s))
 	return err
@@ -108,19 +178,19 @@ func (c *Conn) ReadString() (string, error) {
 	return buffer.String(), nil
 }
 
-func (c *Conn) ReadByte() (byte, error) {
-	const IAC = 255 // Interpret As Command
 
+func (c *Conn) ReadByte() (byte, error) {
 	b := make([]byte, 1)
 	_, err := c.Connection.Read(b)
 	if err != nil {
 		return 0, fmt.Errorf("ReadByte: Error reading byte: %w", err)
 	}
 
-	if b[0] == IAC {
-		_, err := handleIACSequence(c.Connection)
+	if b[0] == 0xFF {
+		command := make([]byte, 2)
+		_, err := c.Connection.Read(command)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("error reading command sequence: %w", err)
 		}
 		return c.ReadByte()
 	}
@@ -128,50 +198,18 @@ func (c *Conn) ReadByte() (byte, error) {
 	return b[0], nil
 }
 
-func (c *Conn) HandleIACCommand() error {
-	const (
-		DO   = 253
-		DONT = 254
-		WILL = 251
-		WONT = 252
-	)
-	command := make([]byte, 2)
-	_, err := c.Connection.Read(command)
-	if err != nil {
-		return fmt.Errorf("error reading command sequence: %w", err)
-	}
-	switch command[0] {
-	case DO:
-		fmt.Printf("Client requests to DO option %d\n", command[1])
-	case DONT:
-		fmt.Printf("Client requests to DONT do option %d\n", command[1])
-	case WILL:
-		fmt.Printf("Client offers to WILL do option %d\n", command[1])
-	case WONT:
-		fmt.Printf("Client offers to WONT do option %d\n", command[1])
-	default:
-		fmt.Printf("Unhandled Telnet command: %d\n", command[0])
-	}
-	return nil
-}
-
-// LocalAddr returns the local network address.
 func (c *Conn) LocalAddr() net.Addr {
-    // Assuming the underlying net.Conn is stored in c.Connection
     return c.Connection.LocalAddr()
 }
 
-// SetDeadline sets the read and write deadlines associated with the connection.
 func (c *Conn) SetDeadline(t time.Time) error {
     return c.Connection.SetDeadline(t)
 }
 
-// SetReadDeadline sets the deadline for future Read calls.
 func (c *Conn) SetReadDeadline(t time.Time) error {
     return c.Connection.SetReadDeadline(t)
 }
 
-// SetWriteDeadline sets the deadline for future Write calls.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
     return c.Connection.SetWriteDeadline(t)
 }
