@@ -1,0 +1,3 @@
+19 July 2024:
+  - Update the SessionManager struct to add AddSession and RemoveSession methods.
+  - Modify the rest of the code to use these new methods.
